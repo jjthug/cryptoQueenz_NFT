@@ -19,17 +19,14 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
   event StartingIndexSet(uint256 _value);
   event DutchAuctionConfigUpdated();
   event PresaleConfigUpdated();
-  event PublicSaleConfigUpdated();
   event ProvenanceHashUpdated(bytes32 _hash);
   event WhitelistSignerUpdated(address _signer);
-  event IpfsCidHashUpdated(string _uri);
+  event ipfsURLUpdated(string _uri);
 
   // MEMBERS ****************************************************
 
   struct DutchAuctionConfig {
-    uint32 txLimit;
     uint32 startTime;
-    uint32 bottomTime;
     uint32 stepInterval;
     uint256 startPrice;
     uint256 bottomPrice;
@@ -43,21 +40,15 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     uint256 mintPrice;
   }
 
-  struct PublicSaleConfig {
-    uint32 startTime;
-    uint32 txLimit;
-    uint256 mintPrice;
-  }
-
   PresaleConfig public presaleConfig;
   DutchAuctionConfig public dutchAuctionConfig;
-  PublicSaleConfig public publicSaleConfig;
 
   //TODO to be changed
   uint256 public constant MAX_OWNER_RESERVE = 10;
   uint256 public constant CRYPTO_QUEENZ_SUPPLY = 40;
   uint256 public totalSupply = 0;
   uint256 public reserved = 0;
+  uint256 public presaleSupplied;
 
   // Mapping from owner to list of owned token IDs
   mapping(address => mapping(uint256 => uint256)) private _ownedTokens;
@@ -66,7 +57,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
   mapping(uint256 => uint256) private _ownedTokensIndex;
 
   string public dummyURI;
-  string public ipfsCIDHash;
+  string public ipfsURL;
   address public whitelistSigner;
 
   bytes32 public PROVENANCE_HASH;
@@ -107,26 +98,18 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     emit WhitelistSignerUpdated(whitelistSignerAddress);
 
     presaleConfig = PresaleConfig({
-      startTime: 1645333096, // 20 February 10.30am IST
-      endTime: 1645379896, // 20 February 2022 11.30pm IST
-      mintPrice: 0.00088 ether,
-      supplyLimit: 20
+      startTime: 1646164800, // 01 March 8pm GMT
+      endTime: 1646251199, // 02 March 7:59:59pm GMT
+      mintPrice: 0.13 ether,
+      supplyLimit: 8000
     });
 
     dutchAuctionConfig = DutchAuctionConfig({
-      txLimit: 3,
-      startTime: 1645333096, // 20 February 10.30am IST
-      bottomTime: 1645379896, // 20 February 2022 11.30pm IST
+      startTime: 1646251200, // 02 March 8pm GMT
       stepInterval: 60, // 1 minute
-      startPrice: 0.01 ether,
-      bottomPrice: 0.0001 ether,
-      priceStep: 0.000005 ether
-    });
-
-    publicSaleConfig = PublicSaleConfig({
-      startTime: 1645333096,
-      txLimit: 5,
-      mintPrice: 0.002 ether
+      startPrice: 1.3 ether,
+      bottomPrice: 0.13 ether,
+      priceStep: 0.1 ether
     });
 
     address[] memory royaltyPayees = new address[](2);
@@ -139,7 +122,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     
     royaltyRecipient = new TheTreasury(royaltyPayees, royaltyShares);
 
-    _setRoyalties(address(royaltyRecipient), 800); // 8% royalties
+    _setRoyalties(address(royaltyRecipient), 1000); // 10% royalties
 
     uint256 chainId;
     assembly {
@@ -173,19 +156,18 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     uint256 approvedLimit
   ) external payable{
 
+    // Checking total limit
     require((totalSupply + numberOfTokens) <= CRYPTO_QUEENZ_SUPPLY, "Total Supply limit reached");
 
     PresaleConfig memory _config = presaleConfig;
 
+
     require(block.timestamp >= _config.startTime && block.timestamp < _config.endTime, "Presale not active");
     require(whitelistSigner != address(0), "Whitelist signer not set");
     //TODO not including max owner reserve
-    require((totalSupply + numberOfTokens) <= (_config.supplyLimit + reserved), "Presale Supply limit reached");
-    require(msg.value == (_config.mintPrice * numberOfTokens), "Incorrect payment");
-    require((presaleMinted[msg.sender] + numberOfTokens) <= approvedLimit, "Mint limit exceeded");
-   
-    presaleMinted[msg.sender] = presaleMinted[msg.sender] + numberOfTokens;
-
+    require((presaleSupplied + numberOfTokens) <= _config.supplyLimit, "Presale Supply limit reached");
+    require(msg.value == (_config.mintPrice * numberOfTokens), "Incorrect ETH provided");
+    
     bytes32 digest = keccak256(
       abi.encodePacked(
         "\x19\x01",
@@ -197,7 +179,12 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     address signer = digest.recover(signature);
     require(signer != address(0) && signer == whitelistSigner,"Invalid signature");
 
+    require((presaleMinted[msg.sender] + numberOfTokens) <= approvedLimit, "Mint limit exceeded");
+    presaleMinted[msg.sender] = presaleMinted[msg.sender] + numberOfTokens;
+
     mint(msg.sender, numberOfTokens);
+    presaleSupplied += numberOfTokens;
+
   }
 
   /// @notice Allows users to buy during presale for free, only whitelisted addresses may call this function.
@@ -206,7 +193,6 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
   /// @param signature signed data authenticating the validity of this transaction
   /// @param numberOfTokens number of NFTs to buy
   /// @param approvedLimit the total number of NFTs this address is permitted to buy during presale, this number is also encoded in the signature
-  
   function buyPresaleFree(
     bytes calldata signature,
     uint256 numberOfTokens,
@@ -218,9 +204,8 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
 
     require(block.timestamp >= _config.startTime && block.timestamp < _config.endTime,"Presale not active");
     require(whitelistSigner != address(0), "Whitelist signer has not been set");
-    require((totalSupply + numberOfTokens) <= (_config.supplyLimit + reserved), "Presale Supply limit reached");
-    require((presaleMintedFree[msg.sender] + numberOfTokens) <= approvedLimit,"Mint limit exceeded");
-
+    require((presaleSupplied + numberOfTokens) <= _config.supplyLimit, "Presale Supply limit reached");
+    
     bytes32 digest = keccak256(
       abi.encodePacked(
         "\x19\x01",
@@ -229,18 +214,19 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
       )
     );
 
-    //TODO use same mapping
-    presaleMintedFree[msg.sender] = presaleMintedFree[msg.sender] + numberOfTokens;
-
     address signer = digest.recover(signature);
     require(signer != address(0) && signer == whitelistSigner, "Invalid signature");
 
+    require((presaleMintedFree[msg.sender] + numberOfTokens) <= approvedLimit,"Mint limit exceeded");
+    presaleMintedFree[msg.sender] = presaleMintedFree[msg.sender] + numberOfTokens;
+
     mint(msg.sender, numberOfTokens);
+    presaleSupplied += numberOfTokens;
 
   }
 
 
-    /// @notice Allows users to buy during public sale, pricing follows a dutch auction format and a constant set price after the dutch auction ends
+  /// @notice Allows users to buy during public sale, pricing follows a dutch auction format and a constant set price after the dutch auction ends
   /// @dev Preventing contract buys has some downsides, but it seems to be what the NFT market generally wants as a bot mitigation measure
   /// @param numberOfTokens the number of NFTs to buy
   function buyAuction(uint256 numberOfTokens) external payable {
@@ -252,44 +238,8 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
       (!msg.sender.isContract() && msg.sender == tx.origin),
       "Contract buys not allowed"
     );
-
-    DutchAuctionConfig memory _config = dutchAuctionConfig;
    
-    require(block.timestamp >= _config.startTime && block.timestamp < _config.bottomTime, "Auction not active");
-    require(numberOfTokens <= _config.txLimit, "Tx limit exceeded");
     uint256 mintPrice = getCurrentAuctionPrice() * numberOfTokens;
-    require(msg.value >= mintPrice, "Insufficient payment");
-
-    // refund if customer paid more than the cost to mint
-    if (msg.value > mintPrice) {
-      Address.sendValue(payable(msg.sender), msg.value - mintPrice);
-    }
-
-    mint(msg.sender, numberOfTokens);
-  }
-
-
-  /// @notice Allows users to buy during public sale, pricing follows a dutch auction format and a constant set price after the dutch auction ends
-  /// @dev Preventing contract buys has some downsides, but it seems to be what the NFT market generally wants as a bot mitigation measure
-  /// @param numberOfTokens the number of NFTs to buy
-  function buyPublic(uint256 numberOfTokens) external payable {
-    
-    require(totalSupply + numberOfTokens <= CRYPTO_QUEENZ_SUPPLY, "Total supply maxed out");
-
-    // disallow contracts from buying
-    require(
-      (!msg.sender.isContract() && msg.sender == tx.origin),
-      "Contract buys not allowed"
-    );
-
-    PublicSaleConfig memory _publicSaleConfig = publicSaleConfig;
-
-    //TODO change this
-    require(block.timestamp >= _publicSaleConfig.startTime, "Sale not active");
-    require(numberOfTokens <= _publicSaleConfig.txLimit, "Tx limit exceeded");
-    
-    uint256 mintPrice = _publicSaleConfig.mintPrice * numberOfTokens;
-
     require(msg.value >= mintPrice, "Insufficient payment");
 
     // refund if customer paid more than the cost to mint
@@ -340,6 +290,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
   /// @param to address for the reserved NFTs to be minted to
   /// @param numberOfTokens number of NFTs to reserve
   function reserve(address[] memory to, uint256[] memory numberOfTokens) external onlyOwner {
+    require(to.length > 0, "Minimum one entry");
     require(to.length == numberOfTokens.length, "Unequal length of to addresses and number of tokens");
     
     uint256 totalNumber;
@@ -349,9 +300,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
       totalNumber += numberOfTokens[i];
     }
 
-    require((totalNumber + reserved) <= MAX_OWNER_RESERVE , "Owner reserve maxed out");
-    require((totalNumber + totalSupply) <= CRYPTO_QUEENZ_SUPPLY, "Total supply maxed out");
-    reserved += totalNumber;
+    require((totalSupply + totalNumber) <= MAX_OWNER_RESERVE,"Exceeds owner reserve limit");
     
     for(i = 0; i < to.length; i++){
       mint(to[i], numberOfTokens[i]);
@@ -360,24 +309,20 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
   /// @notice Allows the contract owner to update config for the public dutch auction
   function configureDutchAuction(
     uint256 startTime,
-    uint256 bottomTime,
     uint256 stepInterval,
     uint256 startPrice,
     uint256 bottomPrice,
     uint256 priceStep
   ) external onlyOwner {
     uint32 _startTime = startTime.toUint32();
-    uint32 _bottomTime = bottomTime.toUint32();
     uint32 _stepInterval = stepInterval.toUint32();
 
-    require(_startTime < _bottomTime, "Invalid time");
     require(0 < stepInterval, "0 step interval");
     require(bottomPrice < startPrice, "Invalid start price");
     require(0 < bottomPrice, "Invalid bottom price");
     require(0 < priceStep && priceStep < startPrice, "Invalid price step");
 
     dutchAuctionConfig.startTime = _startTime;
-    dutchAuctionConfig.bottomTime = _bottomTime;
     dutchAuctionConfig.stepInterval = _stepInterval;
     dutchAuctionConfig.startPrice = startPrice;
     dutchAuctionConfig.bottomPrice = bottomPrice;
@@ -406,19 +351,6 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     emit PresaleConfigUpdated();
   }
 
-    /// @notice Allows the contract owner to update tx limit and mint price for the public sale
-  function configurePublicSale(uint256 txLimit, uint256 _mintPrice)
-    external
-    onlyOwner
-  {
-    require(0 < txLimit, "Invalid tx limit");
-
-    publicSaleConfig.txLimit = txLimit.toUint32();
-    publicSaleConfig.mintPrice = _mintPrice;
-
-    emit PublicSaleConfigUpdated();
-  }
-
   /// @notice Gets the current price for the duction auction, based on current block timestamp, will return a set price value after dutch auction ends
   /// @dev Dutch auction parameters configured via dutchAuctionConfig
   /// @return currentPrice Current mint price per NFT
@@ -429,10 +361,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     
     if (timestamp < _config.startTime) {
       currentPrice = _config.startPrice;
-    } //TODO remove this
-    else if (timestamp >= _config.bottomTime) {
-      currentPrice = _config.bottomPrice;
-    } 
+    }
     else {
       uint256 elapsedIntervals = (timestamp - _config.startTime) /_config.stepInterval;
 
@@ -476,22 +405,28 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     emit StartingIndexSet(randomizedStartIndex);
   }
 
-  function setIPFSCIDHash(string calldata newipfsCIDHash) external onlyOwner {
-    require(keccak256(abi.encodePacked(newipfsCIDHash)) == PROVENANCE_HASH, "Doesn't match with the provenance hash");
-    ipfsCIDHash = newipfsCIDHash;
-    emit IpfsCidHashUpdated(newipfsCIDHash);
+  function getHash(string calldata ipfsCIDURL) public pure returns(bytes32) {
+    return keccak256(abi.encode(ipfsCIDURL));
   }
 
-  //TODO remove
+  function verifyProvenanceHash(string calldata newIpfsURL) view public {
+    require(getHash(newIpfsURL) == PROVENANCE_HASH, "Doesn't match with the provenance hash");
+  }
+
+  function setIpfsURL(string calldata newIpfsURL) external onlyOwner {
+    verifyProvenanceHash(newIpfsURL);
+    ipfsURL = newIpfsURL;
+    emit ipfsURLUpdated(newIpfsURL);
+  }
 
   function setDummyURL(string memory theDummyURI) external onlyOwner{
     dummyURI = theDummyURI;
   }
 
   function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
-      require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
-  //TODO .json ??
-      return bytes(ipfsCIDHash).length > 0 ? string(abi.encodePacked("ipfs://", ipfsCIDHash, (((tokenId + randomizedStartIndex) % CRYPTO_QUEENZ_SUPPLY) + 1).toString(), ".json") ) : dummyURI;
+    require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
+
+    return bytes(ipfsURL).length > 0 ? string(abi.encodePacked(ipfsURL, (((tokenId + randomizedStartIndex) % CRYPTO_QUEENZ_SUPPLY) + 1).toString(), ".json") ) : dummyURI;
   }
 
   function setWhitelistSigner(address newWhitelistSigner) external onlyOwner {
