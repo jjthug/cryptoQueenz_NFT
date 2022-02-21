@@ -6,9 +6,9 @@ pragma solidity ^0.8.0;
 import "./IERC721.sol";
 import "./IERC721Receiver.sol";
 import "./IERC721Metadata.sol";
-import "./Address.sol";
-import "./Context.sol";
-import "./Strings.sol";
+import "../Address.sol";
+import "../Context.sol";
+import "../Strings.sol";
 import "./ERC165.sol";
 
 /**
@@ -283,7 +283,7 @@ contract ERC721 is Context, ERC165, IERC721, IERC721Metadata {
 
         _beforeTokenTransfer(address(0), to, tokenId);
 
-        _balances[to] += 1;
+        // _balances[to] += 1;
         _owners[tokenId] = to;
 
         emit Transfer(address(0), to, tokenId);

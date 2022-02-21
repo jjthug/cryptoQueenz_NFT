@@ -44,11 +44,10 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
   DutchAuctionConfig public dutchAuctionConfig;
 
   //TODO to be changed
-  uint256 public constant MAX_OWNER_RESERVE = 10;
-  uint256 public constant CRYPTO_QUEENZ_SUPPLY = 40;
+  uint256 public constant MAX_OWNER_RESERVE = 100;
+  uint256 public constant CRYPTO_QUEENZ_SUPPLY = 9999;
   uint256 public totalSupply = 0;
-  uint256 public reserved = 0;
-  uint256 public presaleSupplied;
+  uint256 public presaleMintedTotal;
 
   // Mapping from owner to list of owned token IDs
   mapping(address => mapping(uint256 => uint256)) private _ownedTokens;
@@ -165,8 +164,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     require(block.timestamp >= _config.startTime && block.timestamp < _config.endTime, "Presale not active");
     require(whitelistSigner != address(0), "Whitelist signer not set");
     //TODO not including max owner reserve
-    require((presaleSupplied + numberOfTokens) <= _config.supplyLimit, "Presale Supply limit reached");
-    require(msg.value == (_config.mintPrice * numberOfTokens), "Incorrect ETH provided");
+    require((presaleMintedTotal + numberOfTokens) <= _config.supplyLimit, "Presale Supply limit reached");
     
     bytes32 digest = keccak256(
       abi.encodePacked(
@@ -180,10 +178,12 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     require(signer != address(0) && signer == whitelistSigner,"Invalid signature");
 
     require((presaleMinted[msg.sender] + numberOfTokens) <= approvedLimit, "Mint limit exceeded");
+        require(msg.value == (_config.mintPrice * numberOfTokens), "Incorrect ETH provided");
+
     presaleMinted[msg.sender] = presaleMinted[msg.sender] + numberOfTokens;
 
     mint(msg.sender, numberOfTokens);
-    presaleSupplied += numberOfTokens;
+    presaleMintedTotal += numberOfTokens;
 
   }
 
@@ -204,7 +204,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
 
     require(block.timestamp >= _config.startTime && block.timestamp < _config.endTime,"Presale not active");
     require(whitelistSigner != address(0), "Whitelist signer has not been set");
-    require((presaleSupplied + numberOfTokens) <= _config.supplyLimit, "Presale Supply limit reached");
+    require((presaleMintedTotal + numberOfTokens) <= _config.supplyLimit, "Presale Supply limit reached");
     
     bytes32 digest = keccak256(
       abi.encodePacked(
@@ -221,7 +221,7 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     presaleMintedFree[msg.sender] = presaleMintedFree[msg.sender] + numberOfTokens;
 
     mint(msg.sender, numberOfTokens);
-    presaleSupplied += numberOfTokens;
+    presaleMintedTotal += numberOfTokens;
 
   }
 
@@ -229,16 +229,17 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
   /// @notice Allows users to buy during public sale, pricing follows a dutch auction format and a constant set price after the dutch auction ends
   /// @dev Preventing contract buys has some downsides, but it seems to be what the NFT market generally wants as a bot mitigation measure
   /// @param numberOfTokens the number of NFTs to buy
-  function buyAuction(uint256 numberOfTokens) external payable {
+  function buyPublic(uint256 numberOfTokens) external payable {
     
     require(totalSupply + numberOfTokens <= CRYPTO_QUEENZ_SUPPLY, "Total supply maxed out");
+    require(block.timestamp >= dutchAuctionConfig.startTime, "Public sale not active");
 
     // disallow contracts from buying
     require(
       (!msg.sender.isContract() && msg.sender == tx.origin),
       "Contract buys not allowed"
     );
-   
+
     uint256 mintPrice = getCurrentAuctionPrice() * numberOfTokens;
     require(msg.value >= mintPrice, "Insufficient payment");
 
@@ -405,18 +406,20 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
     emit StartingIndexSet(randomizedStartIndex);
   }
 
-  function getHash(string calldata ipfsCIDURL) public pure returns(bytes32) {
+  function calculateProvenanceHash(string calldata ipfsCIDURL) public pure returns(bytes32) {
     return keccak256(abi.encode(ipfsCIDURL));
   }
 
-  function verifyProvenanceHash(string calldata newIpfsURL) view public {
-    require(getHash(newIpfsURL) == PROVENANCE_HASH, "Doesn't match with the provenance hash");
+  function verifyProvenanceHash(string calldata newIpfsURL) view public returns(bool) {
+    require(calculateProvenanceHash(newIpfsURL) == PROVENANCE_HASH, "Doesn't match with the provenance hash");
+    return true;
   }
 
-  function setIpfsURL(string calldata newIpfsURL) external onlyOwner {
-    verifyProvenanceHash(newIpfsURL);
-    ipfsURL = newIpfsURL;
-    emit ipfsURLUpdated(newIpfsURL);
+  function setBaseURI(string calldata _baseURL) external onlyOwner returns(bool) {
+    require(verifyProvenanceHash(_baseURL), "Verification of provenance hash failed");
+    ipfsURL = _baseURL;
+    emit ipfsURLUpdated(_baseURL);
+    return true;
   }
 
   function setDummyURL(string memory theDummyURI) external onlyOwner{
@@ -443,7 +446,6 @@ contract CryptoQueenz is Ownable, ERC721, ERC2981, TheTreasury {
       newId += 1;
       _safeMint(to, newId);
     }
-    // _balances[to] += numberOfTokens;
     totalSupply = newId;
   }
 

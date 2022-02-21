@@ -8,14 +8,31 @@ let secret = require("../secret");
 
 async function main() {
 
-    const CD = await hre.ethers.getContractFactory("CryptoQueenz");
+    const CD = await hre.ethers.getContractFactory("CryptoQueenzDev");
         
     const cd = await CD.deploy("ipfs://QmezoosjRhhrEG1ZdZRMqD2orFFBGcy7cGe5ervyLxBUdF",
-    "0x1abbd2457d497fb5054bf780aba3e67de04596e7c6ddec13afbbd57654e74a8f",
+    "0x33b5a37c7ad1c85013b61bf46c645ada6d26e0ff1675c773758e6c33564523bd",
     "0xc0A0aEa4f8457Caa8C47ED5B5DA410E40EFCbf3c"); 
-    // const cd = await CD.attach("0x5FbDB2315678afecb367f032d93F642f64180aa3"); 
+
+
+    // const cd = await CD.attach("0x0bc73f91D5De34369D066e0C0B3e071576137cA1"); 
     await cd.deployed();
     console.log("Deployed to : ", cd.address);   
+    // let val = await cd.getCurrentAuctionPrice();
+    // console.log(val.toString());
+
+
+    // await cd.reserve([],[]);
+
+    // await cd.rollStartIndex();
+
+    // await cd.setIPFSCIDHash("QmarLsVA3caLyS1WhwyPtpsunQJ7P1AgC4dxbmSbmz7N4s/json/");
+
+
+    // await
+    // .then(function(err, res) {
+    //   console.log(res);
+    // });
     // await cd.verify('0x8de2bba38d282749853426ff943055c2cb8261fd4848856776ecea6deb1ad41b6df32789db58154d91abc4f91b45c90a882dda847154bd0376b8a2841faff9fa1b',1);
     // let sign = "0x8de2bba38d282749853426ff943055c2cb8261fd4848856776ecea6deb1ad41b6df32789db58154d91abc4f91b45c90a882dda847154bd0376b8a2841faff9fa1b";
     // await cd.verify("0x8de2bba38d282749853426ff943055c2cb8261fd4848856776ecea6deb1ad41b6df32789db58154d91abc4f91b45c90a882dda847154bd0376b8a2841faff9fa1b",1);
